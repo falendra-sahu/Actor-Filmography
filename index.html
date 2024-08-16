@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Actor Filmography</title>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            font-family: 'Roboto', sans-serif;
+            background-image: linear-gradient(to top, #7028e4 0%, #e5b2ca 100%);
+            color: #333;
+            line-height: 1.6;
+            padding: 20px;
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background-color: rgba(255, 255, 255, 0.9);
+            border-radius: 10px;
+            padding: 30px;
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
+        }
+        h1 {
+            text-align: center;
+            color: #4a4a4a;
+            margin-bottom: 30px;
+			font-family: 'Poppins', sans-serif;
+        }
+        .search-container {
+            display: flex;
+            margin-bottom: 5px;
+            position: relative;
+        }
+        #actor-input {
+            flex-grow: 1;
+            padding: 10px;
+            font-size: 16px;
+            border: 2px solid #ddd;
+            border-radius: 5px 0 0 5px;
+            outline: none;
+			font-family: 'Poppins', sans-serif;
+        }
+        #search-btn {
+            padding: 10px 20px;
+            font-size: 16px;
+			font-weight: 700;
+			font-family: 'Poppins', sans-serif;
+            background-color: #000000;
+            color: white;
+            border: none;
+            border-radius: 0 5px 5px 0;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        #search-btn:hover {
+            background-color: #a419d8;
+        }
+        #suggestions {
+            width: 100%;
+            background-color: white;
+            border: 1px solid #ddd;
+            border-top: none;
+            border-radius: 0 0 5px 5px;
+            max-height: 200px;
+            overflow-y: auto;
+            z-index: 10;
+            margin-bottom: 15px;
+        }
+        .suggestion-item {
+            padding: 10px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        .suggestion-item:hover, .suggestion-item.selected {
+            background-color: #f0f0f0;
+        }
+        #total-count {
+            text-align: center;
+            margin-bottom: 20px;
+            font-size: 18px;
+            font-weight: bold;
+        }
+        #results {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 20px;
+        }
+        .film-card {
+            background-color: white;
+            border-radius: 5px;
+            overflow: hidden;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            transition: transform 0.3s;
+        }
+        .film-card:hover {
+            transform: translateY(-5px);
+        }
+        .film-poster {
+            width: 100%;
+            height: 300px;
+            object-fit: cover;
+        }
+        .film-info {
+            padding: 15px;
+        }
+        .film-title {
+            font-weight: bold;
+            margin-bottom: 5px;
+            font-size: 14px;
+        }
+        .film-type {
+            font-size: 12px;
+            color: #4CAF50;
+            margin-bottom: 5px;
+        }
+        .film-date, .film-revenue, .film-budget {
+            font-size: 12px;
+            color: #666;
+        }
+        #loading {
+            text-align: center;
+            font-size: 18px;
+            margin-top: 20px;
+            display: none;
+        }
+        @media (max-width: 1024px) {
+            #results {
+                grid-template-columns: repeat(3, 1fr);
+            }
+        }
+        @media (max-width: 768px) {
+            .container {
+                padding: 20px;
+            }
+            #results {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Actor Filmography</h1>
+        <div class="search-container">
+            <input type="text" id="actor-input" placeholder="Enter actor name">
+            <button id="search-btn">Search</button>
+        </div>
+        <div id="suggestions"></div>
+        <div id="total-count"></div>
+        <div id="loading">Searching...</div>
+        <div id="results"></div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/axios/0.21.1/axios.min.js"></script>
+    <script>
+        const apiKey = '4a7ab9cc65176aaa0026ec40a771650c';
+        const searchBtn = document.getElementById('search-btn');
+        const actorInput = document.getElementById('actor-input');
+        const suggestionsContainer = document.getElementById('suggestions');
+        const resultsContainer = document.getElementById('results');
+        const loadingIndicator = document.getElementById('loading');
+        const totalCountElement = document.getElementById('total-count');
+
+        let selectedSuggestionIndex = -1;
+
+        searchBtn.addEventListener('click', () => searchFilmography(actorInput.value));
+        actorInput.addEventListener('input', debounce(getSuggestions, 300));
+        actorInput.addEventListener('keydown', handleKeyDown);
+
+        function debounce(func, delay) {
+            let timeoutId;
+            return function (...args) {
+                clearTimeout(timeoutId);
+                timeoutId = setTimeout(() => func.apply(this, args), delay);
+            };
+        }
+
+        function handleKeyDown(event) {
+            const suggestions = suggestionsContainer.querySelectorAll('.suggestion-item');
+            
+            switch (event.key) {
+                case 'ArrowDown':
+                    event.preventDefault();
+                    selectedSuggestionIndex = (selectedSuggestionIndex + 1) % suggestions.length;
+                    updateSelectedSuggestion();
+                    break;
+                case 'ArrowUp':
+                    event.preventDefault();
+                    selectedSuggestionIndex = (selectedSuggestionIndex - 1 + suggestions.length) % suggestions.length;
+                    updateSelectedSuggestion();
+                    break;
+                case 'Enter':
+                    if (selectedSuggestionIndex !== -1) {
+                        event.preventDefault();
+                        const selectedSuggestion = suggestions[selectedSuggestionIndex];
+                        actorInput.value = selectedSuggestion.textContent;
+                        suggestionsContainer.innerHTML = '';
+                        searchFilmography(actorInput.value);
+                    }
+                    break;
+            }
+        }
+
+        function updateSelectedSuggestion() {
+            const suggestions = suggestionsContainer.querySelectorAll('.suggestion-item');
+            suggestions.forEach((suggestion, index) => {
+                if (index === selectedSuggestionIndex) {
+                    suggestion.classList.add('selected');
+                    suggestion.scrollIntoView({ block: 'nearest' });
+                } else {
+                    suggestion.classList.remove('selected');
+                }
+            });
+        }
+
+        async function getSuggestions() {
+            const query = actorInput.value.trim();
+            if (query.length < 2) {
+                suggestionsContainer.innerHTML = '';
+                return;
+            }
+
+            try {
+                const response = await axios.get(`https://api.themoviedb.org/3/search/person?api_key=${apiKey}&query=${encodeURIComponent(query)}`);
+                const actors = response.data.results;
+
+                suggestionsContainer.innerHTML = '';
+                selectedSuggestionIndex = -1;
+                actors.forEach((actor, index) => {
+                    const suggestionItem = document.createElement('div');
+                    suggestionItem.className = 'suggestion-item';
+                    suggestionItem.textContent = actor.name;
+                    suggestionItem.addEventListener('click', () => {
+                        actorInput.value = actor.name;
+                        suggestionsContainer.innerHTML = '';
+                        searchFilmography(actor.name);
+                    });
+                    suggestionItem.addEventListener('mouseover', () => {
+                        selectedSuggestionIndex = index;
+                        updateSelectedSuggestion();
+                    });
+                    suggestionsContainer.appendChild(suggestionItem);
+                });
+            } catch (error) {
+                console.error('Error fetching suggestions:', error);
+            }
+        }
+
+        function formatDate(dateString) {
+            if (!dateString) return 'N/A';
+            const date = new Date(dateString);
+            return date.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '-');
+        }
+
+        function formatCurrency(amount) {
+            if (!amount) return 'N/A';
+            const amountInINR = amount * 75;
+            return '₹' + amountInINR.toLocaleString('en-IN');
+        }
+
+        async function searchFilmography(actorName) {
+            if (!actorName) return;
+
+            resultsContainer.innerHTML = '';
+            totalCountElement.textContent = '';
+            loadingIndicator.style.display = 'block';
+
+            try {
+                const actorResponse = await axios.get(`https://api.themoviedb.org/3/search/person?api_key=${apiKey}&query=${encodeURIComponent(actorName)}`);
+                
+                if (actorResponse.data.results.length === 0) {
+                    resultsContainer.innerHTML = '<p>No actor found with that name.</p>';
+                    loadingIndicator.style.display = 'none';
+                    return;
+                }
+
+                const actorId = actorResponse.data.results[0].id;
+                const moviesResponse = await axios.get(`https://api.themoviedb.org/3/person/${actorId}/combined_credits?api_key=${apiKey}`);
+                
+                const films = moviesResponse.data.cast;
+                
+                films.sort((a, b) => {
+                    const dateA = a.release_date || a.first_air_date || '';
+                    const dateB = b.release_date || b.first_air_date || '';
+                    return new Date(dateB) - new Date(dateA);
+                });
+
+                totalCountElement.textContent = `Total Films: ${films.length}`;
+
+                for (const film of films) {
+                    const filmCard = document.createElement('div');
+                    filmCard.className = 'film-card';
+                    
+                    const posterPath = film.poster_path 
+                        ? `https://image.tmdb.org/t/p/w500${film.poster_path}`
+                        : 'https://via.placeholder.com/500x750?text=No+Poster';
+                    
+                    const filmType = film.media_type === 'movie' ? 'Movie' : 'TV Series';
+                    const releaseDate = formatDate(film.release_date || film.first_air_date);
+                    
+                    let revenue = 'N/A';
+                    let budget = 'N/A';
+                    if (film.media_type === 'movie') {
+                        const movieDetails = await axios.get(`https://api.themoviedb.org/3/movie/${film.id}?api_key=${apiKey}`);
+                        revenue = formatCurrency(movieDetails.data.revenue);
+                        budget = formatCurrency(movieDetails.data.budget);
+                    }
+                    
+                    filmCard.innerHTML = `
+                        <img class="film-poster" src="${posterPath}" alt="${film.title || film.name} poster">
+                        <div class="film-info">
+                            <div class="film-title">${film.title || film.name}</div>
+                            <div class="film-type">${filmType}</div>
+                            <div class="film-date">Release: ${releaseDate}</div>
+                            <div class="film-budget">Budget: ${budget}</div>
+                            <div class="film-revenue">Box Office: ${revenue}</div>
+                        </div>
+                    `;
+                    
+                    resultsContainer.appendChild(filmCard);
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                resultsContainer.innerHTML = '<p>An error occurred while fetching the data. Please try again.</p>';
+            } finally {
+                loadingIndicator.style.display = 'none';
+            }
+        }
+    </script>
+</body>
+</html>
+</html>
